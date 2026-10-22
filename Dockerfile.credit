@@ -1,0 +1,21 @@
+# Stage 1: Build userms (provides com.claim:demo:0.0.1-SNAPSHOT local dependency)
+FROM maven:3.9.6-eclipse-temurin-17 AS userms-builder
+WORKDIR /userms
+COPY userms/userms/pom.xml .
+COPY userms/userms/src ./src
+RUN mvn clean install -DskipTests
+
+# Stage 2: Build credit service using the installed local dependency
+FROM maven:3.9.6-eclipse-temurin-17 AS builder
+COPY --from=userms-builder /root/.m2 /root/.m2
+WORKDIR /app
+COPY credit/credit/pom.xml .
+COPY credit/credit/src ./src
+RUN mvn clean package -DskipTests
+
+# Stage 3: Lightweight JRE runtime
+FROM eclipse-temurin:17-jre-jammy
+WORKDIR /app
+COPY --from=builder /app/target/*.jar app.jar
+EXPOSE 8082
+ENTRYPOINT ["java", "-jar", "app.jar"]

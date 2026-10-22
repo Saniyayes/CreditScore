@@ -1,0 +1,156 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Credit Score Analysis Tool</title>
+<style>
+:root{--bg:#f5f6fa;--card:#fff;--text:#1d2433;--muted:#6b7385;--line:#e2e5ee;--accent:#2f5bea;--ok:#1a8f4c;--err:#d23b3b}
+@media (prefers-color-scheme:dark){:root{--bg:#12151c;--card:#1b2030;--text:#e8ebf4;--muted:#98a0b5;--line:#2c3348;--accent:#6f93ff;--ok:#4cc486;--err:#ff7b7b}}
+*{box-sizing:border-box}
+body{margin:0;font:15px/1.5 system-ui,Segoe UI,Roboto,sans-serif;background:var(--bg);color:var(--text)}
+header{display:flex;justify-content:space-between;align-items:center;padding:14px 24px;background:var(--card);border-bottom:1px solid var(--line)}
+header h1{font-size:18px;margin:0}
+#who{color:var(--muted);font-size:13px}
+main{max-width:980px;margin:24px auto;padding:0 16px;display:grid;gap:16px;grid-template-columns:repeat(auto-fit,minmax(420px,1fr))}
+@media (max-width:480px){main{grid-template-columns:1fr}}
+.card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:18px}
+.card h2{font-size:15px;margin:0 0 12px}
+.wide{grid-column:1/-1}
+label{display:block;font-size:12px;color:var(--muted);margin:8px 0 3px}
+input{width:100%;padding:8px 10px;border:1px solid var(--line);border-radius:8px;background:transparent;color:var(--text);font:inherit}
+.row{display:flex;gap:8px;flex-wrap:wrap;margin-top:12px}
+button{padding:8px 14px;border:0;border-radius:8px;background:var(--accent);color:#fff;font:inherit;cursor:pointer}
+button.ghost{background:transparent;color:var(--accent);border:1px solid var(--accent)}
+button.danger{background:var(--err)}
+.gauge{display:flex;align-items:center;gap:18px}
+.gauge svg{width:150px;height:90px;flex:none}
+.big{font-size:34px;font-weight:700;line-height:1}
+.band{font-size:13px;color:var(--muted)}
+table{width:100%;border-collapse:collapse;margin-top:8px;font-size:14px}
+th,td{text-align:left;padding:6px 8px;border-bottom:1px solid var(--line)}
+th{color:var(--muted);font-weight:500}
+#msg{position:fixed;bottom:16px;left:50%;transform:translateX(-50%);padding:10px 16px;border-radius:8px;background:var(--card);border:1px solid var(--line);display:none;max-width:90vw}
+#msg.ok{border-color:var(--ok);color:var(--ok)}#msg.err{border-color:var(--err);color:var(--err)}
+.hint{font-size:12px;color:var(--muted);margin-top:8px}
+</style>
+</head>
+<body>
+<header>
+  <h1>Credit Score Analysis Tool</h1>
+  <div><span id="who">Not signed in</span> <button class="ghost" id="logout" style="display:none">Sign out</button></div>
+</header>
+
+<main>
+  <section class="card">
+    <h2>Register</h2>
+    <label>Username</label><input id="r_user">
+    <label>Password</label><input id="r_pass" type="password">
+    <label>Email</label><input id="r_email" type="email">
+    <div class="row"><button id="b_reg">Register</button></div>
+  </section>
+
+  <section class="card">
+    <h2>Sign in</h2>
+    <label>Username</label><input id="l_user">
+    <label>Password</label><input id="l_pass" type="password">
+    <div class="row"><button id="b_login">Sign in</button></div>
+    <div class="hint">Gateway: <input id="base" value="http://localhost:8080" style="margin-top:4px"></div>
+  </section>
+
+  <section class="card wide">
+    <h2>Credit score</h2>
+    <div class="gauge">
+      <svg viewBox="0 0 150 90" aria-hidden="true">
+        <path d="M10 80 A65 65 0 0 1 140 80" fill="none" stroke="var(--line)" stroke-width="12" stroke-linecap="round"/>
+        <path id="arc" d="M10 80 A65 65 0 0 1 140 80" fill="none" stroke="var(--accent)" stroke-width="12" stroke-linecap="round" pathLength="100" stroke-dasharray="0 100"/>
+      </svg>
+      <div><div class="big" id="scoreVal">—</div><div class="band" id="scoreBand">No score loaded</div></div>
+    </div>
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;margin-top:6px">
+      <div><label>User ID</label><input id="uid" type="number" value="1"></div>
+      <div><label>Score (300–900)</label><input id="score" type="number" value="750"></div>
+      <div><label>Date</label><input id="date" type="date"></div>
+    </div>
+    <div class="row">
+      <button id="b_get">Get latest</button>
+      <button id="b_calc">Calculate / save</button>
+      <button class="ghost" id="b_upd">Update</button>
+      <button class="ghost" id="b_hist">History</button>
+      <button class="ghost" id="b_avg">Average</button>
+      <button class="ghost" id="b_ref">Refresh all</button>
+      <button class="danger" id="b_del">Delete</button>
+    </div>
+    <div id="out"></div>
+  </section>
+</main>
+<div id="msg"></div>
+
+<script>
+const $ = id => document.getElementById(id);
+let token = sessionStorage.getItem("token") || "";
+let who = sessionStorage.getItem("who") || "";
+$("date").value = new Date().toISOString().slice(0,10);
+
+function flash(text, ok=true){
+  const m=$("msg"); m.textContent=text; m.className=ok?"ok":"err"; m.style.display="block";
+  clearTimeout(flash.t); flash.t=setTimeout(()=>m.style.display="none",3500);
+}
+function paintAuth(){
+  $("who").textContent = who ? "Signed in as " + who : "Not signed in";
+  $("logout").style.display = who ? "" : "none";
+}
+async function api(path, opts={}){
+  const headers = {"Content-Type":"application/json", ...(token?{Authorization:"Bearer "+token}:{})};
+  const res = await fetch($("base").value.replace(/\/$/,"") + path, {...opts, headers});
+  if(!res.ok) throw new Error(res.status + " " + res.statusText);
+  const text = await res.text();
+  let data = null; try{ data = text ? JSON.parse(text) : null }catch{ data = text }
+  return {res, data};
+}
+function band(s){
+  if(s>=800) return "Excellent"; if(s>=740) return "Very good"; if(s>=670) return "Good";
+  if(s>=580) return "Fair"; return "Poor";
+}
+function showScore(d){
+  if(!d || d.score==null){ $("scoreVal").textContent="—"; $("scoreBand").textContent="No score found"; $("arc").setAttribute("stroke-dasharray","0 100"); return; }
+  const s=Number(d.score), pct=Math.max(0,Math.min(100,(s-300)/6));
+  $("scoreVal").textContent=s; $("scoreBand").textContent=band(s)+" · "+(d.date||"");
+  $("arc").setAttribute("stroke-dasharray", pct+" 100");
+}
+function table(rows){
+  if(!Array.isArray(rows)||!rows.length){ $("out").innerHTML='<div class="hint">No records.</div>'; return; }
+  const flat = rows.map(r => r.creditScoreDetails ? {...r, ...r.creditScoreDetails, creditScoreDetails:undefined} : r);
+  const cols=[...new Set(flat.flatMap(r=>Object.keys(r).filter(k=>r[k]!==undefined)))];
+  const esc=v=>String(v??"").replace(/[&<>]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;"}[c]));
+  $("out").innerHTML="<table><tr>"+cols.map(c=>"<th>"+esc(c)+"</th>").join("")+"</tr>"+
+    flat.map(r=>"<tr>"+cols.map(c=>"<td>"+esc(typeof r[c]==="object"?JSON.stringify(r[c]):r[c])+"</td>").join("")+"</tr>").join("")+"</table>";
+}
+const body = () => JSON.stringify({userId:+$("uid").value, score:+$("score").value, date:$("date").value});
+const run = fn => async () => { try{ await fn() }catch(e){ flash(e.message,false) } };
+
+$("b_reg").onclick = run(async()=>{
+  await api("/users/register",{method:"POST",body:JSON.stringify({username:$("r_user").value,password:$("r_pass").value,email:$("r_email").value,role:"USER"})});
+  flash("Registered. Now sign in.");
+});
+$("b_login").onclick = run(async()=>{
+  const q = new URLSearchParams({username:$("l_user").value,password:$("l_pass").value});
+  const {res} = await api("/users/login?"+q,{method:"POST"});
+  const h = res.headers.get("Authorization");
+  token = h ? h.replace(/^Bearer /,"") : "";
+  who = $("l_user").value;
+  sessionStorage.setItem("token",token); sessionStorage.setItem("who",who);
+  paintAuth(); flash("Signed in");
+});
+$("logout").onclick = ()=>{ token=""; who=""; sessionStorage.clear(); paintAuth(); };
+$("b_get").onclick  = run(async()=>{ const {data}=await api("/score/"+$("uid").value); showScore(data); $("out").innerHTML=""; });
+$("b_calc").onclick = run(async()=>{ const {data}=await api("/score/calculate",{method:"POST",body:body()}); showScore(data); flash("Saved"); });
+$("b_upd").onclick  = run(async()=>{ const {data}=await api("/score/"+$("uid").value,{method:"PUT",body:body()}); showScore(data); flash("Updated"); });
+$("b_hist").onclick = run(async()=>{ const {data}=await api("/score/history/"+$("uid").value); table(data); });
+$("b_avg").onclick  = run(async()=>{ const {data}=await api("/score/average"); $("out").innerHTML='<div class="hint">Average score across all records: <b>'+Number(data).toFixed(1)+'</b></div>'; });
+$("b_ref").onclick  = run(async()=>{ await api("/score/refresh",{method:"PUT"}); flash("Refreshed"); });
+$("b_del").onclick  = run(async()=>{ if(!confirm("Delete scores for user "+$("uid").value+"?")) return; await api("/score/"+$("uid").value,{method:"DELETE"}); showScore(null); flash("Deleted"); });
+paintAuth();
+</script>
+</body>
+</html>
